@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient';
 export default function App() {
   const [view, setView] = useState('list');
   const [words, setWords] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // 퀴즈 관련 상태
   const [quizSet, setQuizSet] = useState([]);
