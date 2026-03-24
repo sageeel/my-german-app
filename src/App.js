@@ -2,33 +2,45 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
 export default function App() {
-  const [view, setView] = useState('list');
+  const [view, setView] = useState('daySelect');
+  const [selectedDay, setSelectedDay] = useState(null);
   const [words, setWords] = useState([]);
-  const [, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // 퀴즈 관련 상태
   const [quizSet, setQuizSet] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [options, setOptions] = useState([]);
   const [score, setScore] = useState(0);
-  const [feedback, setFeedback] = useState(null); // 'correct' | 'wrong' | null
+  const [feedback, setFeedback] = useState(null);
 
-  const fetchWords = async () => {
+  // 특정 Day의 단어 가져오기
+  const fetchWordsByDay = async (day) => {
     setLoading(true);
-    const { data, error } = await supabase.from('words').select('*').order('id', { ascending: false });
-    if (error) console.error('Error:', error);
-    else setWords(data);
+    setSelectedDay(day);
+    const { data, error } = await supabase
+      .from('words')
+      .select('*')
+      .eq('day', day);
+
+    if (error) {
+      console.error('Error:', error);
+      alert('데이터를 불러오지 못했습니다.');
+    } else {
+      setWords(data);
+      setView('list');
+    }
     setLoading(false);
   };
 
-  useEffect(() => { fetchWords(); }, []);
-
-  // --- 퀴즈 로직 시작 ---
+  // --- 퀴즈 로직 (20문항으로 수정) ---
   const startQuiz = () => {
     if (words.length < 4) return alert('퀴즈를 위해 최소 4개 이상의 단어가 필요합니다!');
     
-    // 1. 단어 셔플 (10문제만 뽑기)
-    const shuffled = [...words].sort(() => Math.random() - 0.5).slice(0, 10);
+    // 무작위로 20문제 추출 (단어 수가 20개 미만일 경우 전체 출력)
+    const quizCount = words.length < 20 ? words.length : 20;
+    const shuffled = [...words].sort(() => Math.random() - 0.5).slice(0, quizCount);
+    
     setQuizSet(shuffled);
     setCurrentIndex(0);
     setScore(0);
@@ -37,127 +49,129 @@ export default function App() {
   };
 
   const generateOptions = (correctWord, allWords) => {
-    // 정답 제외하고 오답 3개 뽑기
     const distractors = allWords
       .filter(w => w.id !== correctWord.id)
       .sort(() => Math.random() - 0.5)
       .slice(0, 3)
       .map(w => w.meaning);
-    
-    // 정답과 합쳐서 셔플
     const combined = [...distractors, correctWord.meaning].sort(() => Math.random() - 0.5);
     setOptions(combined);
     setFeedback(null);
   };
 
   const handleAnswer = (selected) => {
-    if (feedback) return; // 연속 클릭 방지
+    if (feedback) return;
     const isCorrect = selected === quizSet[currentIndex].meaning;
-    
-    if (isCorrect) {
-      setScore(s => s + 1);
-      setFeedback('correct');
-    } else {
-      setFeedback('wrong');
-    }
+    if (isCorrect) { setScore(s => s + 1); setFeedback('correct'); }
+    else { setFeedback('wrong'); }
 
-    // 1.5초 후 다음 문제 혹은 결과창
     setTimeout(() => {
       if (currentIndex < quizSet.length - 1) {
         const nextIdx = currentIndex + 1;
         setCurrentIndex(nextIdx);
         generateOptions(quizSet[nextIdx], words);
-      } else {
-        setView('result');
-      }
-    }, 1500);
+      } else { setView('result'); }
+    }, 1000);
   };
-  // --- 퀴즈 로직 끝 ---
 
   return (
     <div style={containerStyle}>
-      <h1 style={{ textAlign: 'center', color: '#0052b4' }}>🇩🇪 Tag 2 마스터 퀴즈</h1>
+      <h1 style={{ textAlign: 'center', color: '#0052b4', cursor: 'pointer' }} onClick={() => setView('daySelect')}>
+        🇩🇪 FLEX 마스터
+      </h1>
 
-      {/* 상단 네비게이션 */}
-      <div style={navStyle}>
-        <button onClick={() => setView('list')} style={view === 'list' ? activeTabStyle : tabStyle}>목록</button>
-        <button onClick={startQuiz} style={view === 'quiz' ? activeTabStyle : tabStyle}>퀴즈 시작</button>
-      </div>
-
-      {/* 1. 목록 화면 */}
-      {view === 'list' && (
-        <div style={{ marginTop: '20px' }}>
-          {words.map(item => (
-            <div key={item.id} style={cardStyle}>
-              <div style={{fontWeight: 'bold'}}>
-                <span style={{ color: item.article === 'der' ? 'blue' : item.article === 'die' ? 'red' : item.article === 'das' ? 'green' : '#666' }}>
-                  {item.article}
-                </span> {item.word}
-              </div>
-              <div style={{fontSize: '14px', color: '#555'}}>{item.meaning}</div>
-              {item.synonym && <div style={{fontSize: '12px', color: '#999'}}>유의어: {item.synonym}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 2. 퀴즈 화면 */}
-      {view === 'quiz' && quizSet[currentIndex] && (
-        <div style={{ textAlign: 'center', marginTop: '30px' }}>
-          <p style={{ color: '#999' }}>문제 {currentIndex + 1} / {quizSet.length}</p>
-          <div style={quizBoxStyle}>
-            <span style={{ fontSize: '18px', color: '#0052b4' }}>{quizSet[currentIndex].article}</span>
-            <h2 style={{ fontSize: '36px', margin: '10px 0' }}>{quizSet[currentIndex].word}</h2>
-          </div>
-
-          <div style={{ display: 'grid', gap: '10px' }}>
-            {options.map((opt, i) => (
-              <button 
-                key={i} 
-                onClick={() => handleAnswer(opt)}
-                disabled={feedback}
-                style={{
-                  ...optionButtonStyle,
-                  backgroundColor: feedback && opt === quizSet[currentIndex].meaning ? '#d4edda' : '#fff',
-                  borderColor: feedback && opt === quizSet[currentIndex].meaning ? '#28a745' : '#ddd'
-                }}
-              >
-                {opt}
+      {/* 1. 날짜 선택 화면 (Day 20까지 생성) */}
+      {view === 'daySelect' && (
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <h3 style={{ marginBottom: '20px' }}>학습할 날짜를 선택하세요</h3>
+          <div style={dayGridStyle}>
+            {Array.from({ length: 20 }, (_, i) => i + 1).map(d => (
+              <button key={d} onClick={() => fetchWordsByDay(d)} style={dayButtonStyle}>
+                Day {d}
               </button>
             ))}
           </div>
-
-          {feedback && (
-            <div style={{ marginTop: '20px', padding: '15px', borderRadius: '10px', backgroundColor: feedback === 'correct' ? '#e7f3ff' : '#fff5f5' }}>
-              <p style={{ fontWeight: 'bold', color: feedback === 'correct' ? '#0052b4' : '#e53e3e' }}>
-                {feedback === 'correct' ? 'Richtig! (정답입니다)' : 'Falsch! (틀렸습니다)'}
-              </p>
-              <p style={{ fontSize: '14px', fontStyle: 'italic' }}>"{quizSet[currentIndex].example}"</p>
-            </div>
-          )}
         </div>
       )}
 
-      {/* 3. 결과 화면 */}
-      {view === 'result' && (
-        <div style={{ textAlign: 'center', marginTop: '50px' }}>
-          <h2 style={{ fontSize: '48px' }}>🎉</h2>
-          <h3>퀴즈 완료!</h3>
-          <p style={{ fontSize: '24px' }}>점수: <span style={{ color: '#0052b4', fontWeight: 'bold' }}>{score}</span> / {quizSet.length}</p>
-          <button onClick={startQuiz} style={saveButtonStyle}>다시 도전하기</button>
-          <button onClick={() => setView('list')} style={{ ...saveButtonStyle, background: '#666', marginTop: '10px' }}>목록으로 돌아가기</button>
-        </div>
+      {loading && <p style={{textAlign:'center', marginTop: '50px'}}>데이터 로딩 중...</p>}
+
+      {!loading && view !== 'daySelect' && (
+        <>
+          <div style={navStyle}>
+             <button onClick={() => setView('list')} style={view === 'list' ? activeTabStyle : tabStyle}>목록</button>
+             <button onClick={startQuiz} style={view === 'quiz' ? activeTabStyle : tabStyle}>20문제 퀴즈</button>
+             <button onClick={() => setView('daySelect')} style={tabStyle}>날짜변경</button>
+          </div>
+
+          {view === 'list' && (
+            <div style={{ marginTop: '10px' }}>
+              <p style={{fontSize: '14px', color: '#666'}}>Day {selectedDay} 총 {words.length}단어</p>
+              {words.map(item => (
+                <div key={item.id} style={cardStyle}>
+                  <div style={{fontWeight: 'bold'}}>
+                    <span style={{ color: item.article === 'der' ? 'blue' : item.article === 'die' ? 'red' : item.article === 'das' ? 'green' : '#666' }}>
+                      {item.article}
+                    </span> {item.word}
+                  </div>
+                  <div style={{fontSize: '14px', color: '#555'}}>{item.meaning}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {view === 'quiz' && (
+             <div style={{ textAlign: 'center' }}>
+                {/* 진행률 바 추가 */}
+                <div style={{ background: '#eee', height: '8px', borderRadius: '4px', marginBottom: '20px' }}>
+                  <div style={{ 
+                    background: '#0052b4', 
+                    height: '100%', 
+                    borderRadius: '4px', 
+                    width: `${((currentIndex + 1) / quizSet.length) * 100}%`,
+                    transition: '0.3s'
+                  }} />
+                </div>
+                <p style={{color: '#888'}}>Q {currentIndex + 1} / {quizSet.length}</p>
+                <div style={quizBoxStyle}>
+                  <h2 style={{ fontSize: '32px' }}>{quizSet[currentIndex].word}</h2>
+                </div>
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {options.map((opt, i) => (
+                    <button key={i} onClick={() => handleAnswer(opt)} disabled={feedback} style={{
+                      ...optionButtonStyle,
+                      background: feedback && opt === quizSet[currentIndex].meaning ? '#d4edda' : '#fff'
+                    }}>{opt}</button>
+                  ))}
+                </div>
+                {feedback && <p style={{marginTop:'15px', color: feedback === 'correct' ? 'blue' : 'red', fontWeight: 'bold'}}>
+                  {feedback === 'correct' ? 'Richtig! (정답)' : 'Falsch! (오답)'}
+                </p>}
+             </div>
+          )}
+
+          {view === 'result' && (
+            <div style={{ textAlign: 'center', marginTop: '50px' }}>
+              <h1 style={{fontSize: '60px'}}>🎖️</h1>
+              <h2>Day {selectedDay} 완료!</h2>
+              <p style={{fontSize: '24px'}}>점수: <b>{score}</b> / {quizSet.length}</p>
+              <button onClick={() => setView('daySelect')} style={saveButtonStyle}>다른 날짜 공부하기</button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-// 기존 스타일에 추가된 스타일들
+// 스타일 시트
 const containerStyle = { maxWidth: '450px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' };
-const navStyle = { display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
+const dayGridStyle = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' };
+const dayButtonStyle = { padding: '12px 5px', fontSize: '14px', borderRadius: '10px', border: '1px solid #ddd', background: '#fff', cursor: 'pointer' };
+const navStyle = { display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid #eee' };
 const tabStyle = { flex: 1, padding: '10px', border: 'none', background: 'none', cursor: 'pointer', color: '#999' };
 const activeTabStyle = { ...tabStyle, color: '#0052b4', fontWeight: 'bold', borderBottom: '2px solid #0052b4' };
-const cardStyle = { padding: '15px', borderBottom: '1px solid #eee' };
-const quizBoxStyle = { padding: '40px 20px', background: '#f8fbff', borderRadius: '20px', marginBottom: '30px' };
-const optionButtonStyle = { padding: '15px', border: '1px solid #ddd', borderRadius: '12px', fontSize: '16px', cursor: 'pointer', transition: '0.2s' };
-const saveButtonStyle = { width: '100%', padding: '15px', background: '#0052b4', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' };
+const cardStyle = { padding: '12px', borderBottom: '1px solid #eee' };
+const quizBoxStyle = { padding: '40px 20px', background: '#f8fbff', borderRadius: '20px', marginBottom: '20px' };
+const optionButtonStyle = { padding: '15px', border: '1px solid #ddd', borderRadius: '12px', cursor: 'pointer' };
+const saveButtonStyle = { width: '100%', padding: '15px', background: '#0052b4', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', marginTop: '20px' };
